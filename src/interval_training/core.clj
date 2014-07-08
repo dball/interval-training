@@ -6,6 +6,37 @@
 
 (def activity ->Activity)
 
+(def sample-schedule
+  [[0 "Jumping Jacks"]
+   [25 "5"]
+   [26 "4"]
+   [27 "3"]
+   [28 "2"]
+   [29 "1"]
+   [30 "Rest"]
+   [35 "3"]
+   [36 "2"]
+   [37 "1"]
+   [38 "Wall Sit"]])
+
+(defn add-activity
+  [schedule tick activity]
+  (let [{:keys [title interval countdown]} activity
+        next-tick (+ tick interval)]
+    (into (conj schedule [tick title])
+          (map (fn [left]
+                 [(- next-tick left) (str left)])
+               (range countdown 0 -1)))))
+
+(defn build-schedule
+  ([activities] (build-schedule activities 0))
+  ([activities tick]
+     (first (reduce (fn [[schedule tick] activity]
+                      [(add-activity schedule tick activity)
+                       (+ tick (:interval activity))])
+                    [[] tick]
+                    activities))))
+
 (defn publish-activities
   [c activities]
   (a/go-loop [[activity & activities] activities]
