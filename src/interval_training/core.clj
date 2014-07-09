@@ -1,23 +1,11 @@
 (ns interval-training.core
   (:require [clojure.core.async :as a]
-            [interval-training.speech :as speech]))
+            [interval-training.speech :as speech]
+            [interval-training.ticker :as ticker]))
 
 (defrecord Activity [title interval countdown])
 
 (def activity ->Activity)
-
-(def sample-schedule
-  [[0 "Jumping Jacks"]
-   [25 "5"]
-   [26 "4"]
-   [27 "3"]
-   [28 "2"]
-   [29 "1"]
-   [30 "Rest"]
-   [35 "3"]
-   [36 "2"]
-   [37 "1"]
-   [38 "Wall Sit"]])
 
 (defn add-activity
   [schedule tick activity]
@@ -29,37 +17,13 @@
                (range countdown 0 -1)))))
 
 (defn build-schedule
-  ([activities] (build-schedule activities 0))
+  ([activities] (build-schedule activities 1))
   ([activities tick]
      (first (reduce (fn [[schedule tick] activity]
                       [(add-activity schedule tick activity)
                        (+ tick (:interval activity))])
                     [[] tick]
                     activities))))
-
-(defn publish-activities
-  [c activities]
-  (a/go-loop [[activity & activities] activities]
-    (let [{:keys [title interval countdown]} activity]
-      (a/>! c title)
-      (a/<! (a/timeout (* 1000 (- interval countdown))))
-      (loop [i countdown]
-        (when (pos? i)
-          (a/>! c (str i))
-          (a/<! (a/timeout 1000))
-          (recur (dec i)))))
-    (if (seq activities)
-      (recur activities)
-      (a/close! c))))
-
-(defn say-words
-  [c speaker]
-  (a/go-loop []
-    (when-let [word (a/<! c)]
-      (speech/say speaker word)
-      (recur))))
-
-(def sample-titles ["Jumping Jacks" "Wall Sit" "Push Ups"])
 
 (defn build-set
   [titles interval countdown rest]
@@ -73,15 +37,48 @@
         rests (repeat times rest)]
     (flatten (cons set (interleave rests sets)))))
 
-(defn do-sample-workout
-  []
-  (let [words (a/chan)
+(def sample-workout
+  (let [exercises ["Jumping Jacks" "Wall Sit" "Push Ups"]
         rest (activity "Rest" 8 3)
         rest-between-sets (activity "Rest between sets" 10 7)
-        set (build-set sample-titles 10 5 rest)
-        workout (build-workout set 3 rest-between-sets)
-        publishing (publish-activities words workout)]
-    (say-words words speech/alex-osx-speaker)
-    (a/go
-      (a/<! publishing)
-      (a/>! words "Finished"))))
+        set (build-set exercises 10 5 rest)
+        workout (build-workout set 3 rest-between-sets)]
+    workout))
+
+(defn speaker-chan
+  ([] (speaker-chan speech/alex-osx-speaker))
+  ([speaker]
+      (let [c (a/chan)]
+        (a/go-loop []
+                   (when-let [words (a/<! c)]
+                     (speech/say speaker words)
+                     (recur)))
+        c)))
+
+(defn do-workout
+  [workout]
+  (let [control (a/chan)
+        speaker (speaker-chan)
+        schedule (build-schedule workout)
+        ticker (ticker/ticker-chan 1)
+        process (a/go-loop [schedule schedule]
+                           (if (seq schedule)
+                             (let [[value chan] (a/alts! [ticker control])]
+                               (if (= chan control)
+                                 (do
+                                   (a/>! speaker "Aborted")
+                                   (a/close! ticker))
+                                 (let [[tick words] (first schedule)]
+                                   (if (= tick value)
+                                     (do
+                                       (a/>! speaker words)
+                                       (recur (rest schedule)))
+                                     (recur schedule)))))
+                             (do
+                               (a/<! ticker)
+                               (a/>! speaker "Finished")
+                               (a/close! ticker))))]
+    {:control control
+     :ticker ticker
+     :speaker speaker
+     :process process}))
