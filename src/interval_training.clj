@@ -1,4 +1,4 @@
-(ns interval-training.core
+(ns interval-training
   (:require [clojure.core.async :as a]
             [interval-training.speech :as speech]
             [interval-training.ticker :as ticker]))
