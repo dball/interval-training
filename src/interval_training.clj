@@ -37,14 +37,6 @@
         rests (repeat times rest)]
     (flatten (cons set (interleave rests sets)))))
 
-(def sample-workout
-  (let [exercises ["Jumping Jacks" "Wall Sit" "Push Ups"]
-        rest (activity "Rest" 8 3)
-        rest-between-sets (activity "Rest between sets" 10 7)
-        set (build-set exercises 10 5 rest)
-        workout (build-workout set 3 rest-between-sets)]
-    workout))
-
 (defn speaker-chan
   ([] (speaker-chan speech/alex-osx-speaker))
   ([speaker]
@@ -82,3 +74,37 @@
      :ticker ticker
      :speaker speaker
      :process process}))
+
+(def sample-workout
+  (let [exercises ["Jumping Jacks" "Wall Sit" "Push Ups"]
+        rest (activity "Rest" 8 3)
+        rest-between-sets (activity "Rest between sets" 10 7)
+        set (build-set exercises 10 5 rest)
+        workout (build-workout set 3 rest-between-sets)]
+    workout))
+
+(defn standard-workout
+  [set-count]
+  (let [exercises ["Jumping Jacks"
+                   "Wall Sit"
+                   "Push Ups"
+                   "Crunches"
+                   "Step Ups"
+                   "Squats"
+                   "Dips"
+                   "Plank"
+                   "Running"
+                   "Lunges"
+                   "Pushups with rotation"
+                   "Left side plank"
+                   "Right side plank"
+                   "Bird Dogs"]
+        rest (activity "Rest" 10 3)
+        set (build-set exercises 30 5 rest)
+        rest-between-sets (activity "Rest between sets" 60 10)
+        workout (build-workout set set-count rest-between-sets)]
+    workout))
+
+(defn -main [& args]
+  (let [state (do-workout (standard-workout 2))]
+    (a/<!! (:process state))))
