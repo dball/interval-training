@@ -11,22 +11,19 @@
         schedule (schedule/workout-schedule workout)
         ticker (ticker/ticker-chan 1)
         process (a/go-loop [schedule schedule]
-                           (if (seq schedule)
-                             (let [[value chan] (a/alts! [ticker control])]
-                               (if (= chan control)
-                                 (do
-                                   (a/>! speaker "Aborted")
-                                   (a/close! ticker))
-                                 (let [[tick words] (first schedule)]
-                                   (if (= tick value)
-                                     (do
-                                       (a/>! speaker (str words))
-                                       (recur (rest schedule)))
-                                     (recur schedule)))))
-                             (do
-                               (a/<! ticker)
-                               (a/>! speaker "Finished")
-                               (a/close! ticker))))]
+                  (if (seq schedule)
+                    (a/alt! control (a/>! speaker "Aborted")
+                            ticker ([t]
+                                      (let [[tick utterance] (first schedule)]
+                                        (if (= tick t)
+                                          (do
+                                            (a/>! speaker (str utterance))
+                                            (recur (rest schedule)))
+                                          (recur schedule)))))
+                    (do
+                      (a/<! ticker)
+                      (a/>! speaker "Finished"))))]
+    (a/go (a/<! process) (a/close! ticker))
     {:control control
      :ticker ticker
      :speaker speaker
