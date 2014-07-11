@@ -1,57 +1,14 @@
 (ns interval-training
   (:require [clojure.core.async :as a]
-            [interval-training.speech :as speech]
+            [interval-training.schedule :as schedule]
+            [interval-training.speaker :as speaker]
             [interval-training.ticker :as ticker]))
-
-(defrecord Activity [title interval countdown])
-
-(def activity ->Activity)
-
-(defn add-activity
-  [schedule tick activity]
-  (let [{:keys [title interval countdown]} activity
-        next-tick (+ tick interval)]
-    (into (conj schedule [tick title])
-          (map (fn [left]
-                 [(- next-tick left) (str left)])
-               (range countdown 0 -1)))))
-
-(defn build-schedule
-  ([activities] (build-schedule activities 1))
-  ([activities tick]
-     (first (reduce (fn [[schedule tick] activity]
-                      [(add-activity schedule tick activity)
-                       (+ tick (:interval activity))])
-                    [[] tick]
-                    activities))))
-
-(defn build-set
-  [titles interval countdown rest]
-  (let [[a & as] (map #(activity % interval countdown) titles)
-        rests (repeat rest)]
-    (cons a (interleave rests as))))
-
-(defn build-workout
-  [set times rest]
-  (let [[set & sets] (repeat times set)
-        rests (repeat times rest)]
-    (flatten (cons set (interleave rests sets)))))
-
-(defn speaker-chan
-  ([] (speaker-chan speech/alex-osx-speaker))
-  ([speaker]
-      (let [c (a/chan)]
-        (a/go-loop []
-                   (when-let [words (a/<! c)]
-                     (speech/say speaker words)
-                     (recur)))
-        c)))
 
 (defn do-workout
   [workout]
   (let [control (a/chan)
-        speaker (speaker-chan)
-        schedule (build-schedule workout)
+        speaker (speaker/speaker-chan)
+        schedule (schedule/workout-schedule workout)
         ticker (ticker/ticker-chan 1)
         process (a/go-loop [schedule schedule]
                            (if (seq schedule)
@@ -63,7 +20,7 @@
                                  (let [[tick words] (first schedule)]
                                    (if (= tick value)
                                      (do
-                                       (a/>! speaker words)
+                                       (a/>! speaker (str words))
                                        (recur (rest schedule)))
                                      (recur schedule)))))
                              (do
@@ -75,36 +32,26 @@
      :speaker speaker
      :process process}))
 
-(def sample-workout
-  (let [exercises ["Jumping Jacks" "Wall Sit" "Push Ups"]
-        rest (activity "Rest" 8 3)
-        rest-between-sets (activity "Rest between sets" 10 7)
-        set (build-set exercises 10 5 rest)
-        workout (build-workout set 3 rest-between-sets)]
-    workout))
-
-(defn standard-workout
-  [set-count]
-  (let [exercises ["Jumping Jacks"
-                   "Wall Sit"
-                   "Push Ups"
-                   "Crunches"
-                   "Step Ups"
-                   "Squats"
-                   "Dips"
-                   "Plank"
-                   "Running"
-                   "Lunges"
-                   "Pushups with rotation"
-                   "Left side plank"
-                   "Right side plank"
-                   "Bird Dogs"]
-        rest (activity "Rest" 10 3)
-        set (build-set exercises 30 5 rest)
-        rest-between-sets (activity "Rest between sets" 60 10)
-        workout (build-workout set set-count rest-between-sets)]
-    workout))
+(def standard-workout
+  {:exercise {:names ["Jumping Jacks"
+                      "Wall Sit"
+                      "Push Ups"
+                      "Crunches"
+                      "Step Ups"
+                      "Squats"
+                      "Dips"
+                      "Plank"
+                      "Running"
+                      "Lunges"
+                      "Pushups with rotation"
+                      "Left side plank"
+                      "Right side plank"
+                      "Bird Dogs"]
+              :active [30 5]
+              :respite [10 3]}
+   :sets {:count 2
+          :respite [120 10]}})
 
 (defn -main [& args]
-  (let [state (do-workout (standard-workout 2))]
+  (let [state (do-workout standard-workout)]
     (a/<!! (:process state))))

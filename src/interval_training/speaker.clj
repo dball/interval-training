@@ -1,5 +1,6 @@
-(ns interval-training.speech
-  (:require [clojure.java.shell :refer [sh]])
+(ns interval-training.speaker
+  (:require [clojure.core.async :as a]
+            [clojure.java.shell :refer [sh]])
   (:import
    (com.sun.speech.freetts Voice)
    (com.sun.speech.freetts VoiceManager)
@@ -8,18 +9,31 @@
    (javax.sound.sampled AudioFileFormat$Type)))
 
 (defprotocol Speaker
-  (say [_ word]))
+  (speak [_ utterance]))
+
+(declare default-speaker)
+
+(defn speaker-chan
+  "Returns a channel which will speak the messages given to it"
+  ([] (speaker-chan default-speaker))
+  ([speaker]
+     (let [c (a/chan)]
+       (a/go-loop []
+                  (when-let [utterance (a/<! c)]
+                    (speak speaker utterance)
+                    (recur)))
+       c)))
 
 (defrecord FreeTTSSpeaker [dir voice]
   Speaker
-  (say [_ word]
+  (speak [_ utterance]
     (System/setProperty "freetts.voices" dir)
     (let [voice-manager (. VoiceManager getInstance)
           audioplayer (doto (new JavaStreamingAudioPlayer))]
       (doto (. voice-manager getVoice voice)
         (.allocate)
         (.setAudioPlayer audioplayer)
-        (.speak word)
+        (.speak utterance)
         (.deallocate))
       (.close audioplayer))
     nil))
@@ -60,10 +74,12 @@
 
 (defrecord OSXSpeaker [voice]
   Speaker
-  (say [_ word]
+  (speak [_ utterance]
     (let [osx-voice (get osx-voices voice voice)]
-      (sh "say" "-v" osx-voice word))
+      (sh "say" "-v" osx-voice utterance))
     nil))
 
 (def alex-osx-speaker
   (->OSXSpeaker :alex))
+
+(def default-speaker alex-osx-speaker)
