@@ -15,8 +15,8 @@
 (defn build-activities
   [workout]
   (let [{:keys [exercise sets]} workout
-        respite (build-activity "Respite" (:respite exercise))
-        respite-between-sets (build-activity "Respite between sets" (:respite sets))
+        respite (build-activity "Rest" (:respite exercise))
+        respite-between-sets (build-activity "Rest between sets" (:respite sets))
         exercises (map #(build-activity % (:active exercise)) (:names exercise))
         set (interleave-respites respite exercises)]
     (interleave-respites respite-between-sets (repeat (:count sets) set))))
