@@ -8,25 +8,26 @@
   [display schedule]
   (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
-        process (a/go-loop [schedule schedule]
-                  (a/alt! control (display "Aborted")
-                          ticker ([t]
-                                    (if (seq schedule)
-                                      (let [[tick title] (first schedule)]
-                                        (if (= tick t)
-                                          (do
-                                            (display title)
-                                            (recur (rest schedule)))
-                                          (recur schedule)))
-                                      (display "Finished")))))]
-    (a/go (a/<! process) (a/close! ticker))
+        work (a/go-loop [schedule schedule]
+               (a/alt! control "Aborted"
+                       ticker ([t]
+                                 (if (seq schedule)
+                                   (let [[tick title] (first schedule)]
+                                     (if (= tick t)
+                                       (do
+                                         (display title)
+                                         (recur (rest schedule)))
+                                       (recur schedule)))
+                                   "Finished"))))
+        process (a/go (display (a/<! work))
+                      (a/close! ticker))]
     {:control control
      :ticker ticker
      :process process}))
 
 (defn display
   [speaker title]
-  (a/go (a/>! speaker (str title))))
+  (a/put! speaker (str title)))
 
 (defn do-workout
   [workout]
