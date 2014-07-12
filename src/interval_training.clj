@@ -4,30 +4,36 @@
             [interval-training.speaker :as speaker]
             [interval-training.ticker :as ticker]))
 
-(defn do-workout
-  [workout]
+(defn play-schedule
+  [display schedule]
   (let [control (a/chan)
-        speaker (speaker/speaker-chan)
-        schedule (schedule/workout-schedule workout)
         ticker (ticker/ticker-chan 1)
         process (a/go-loop [schedule schedule]
-                  (if (seq schedule)
-                    (a/alt! control (a/>! speaker "Aborted")
-                            ticker ([t]
-                                      (let [[tick utterance] (first schedule)]
+                  (a/alt! control (display "Aborted")
+                          ticker ([t]
+                                    (if (seq schedule)
+                                      (let [[tick title] (first schedule)]
                                         (if (= tick t)
                                           (do
-                                            (a/>! speaker (str utterance))
+                                            (display title)
                                             (recur (rest schedule)))
-                                          (recur schedule)))))
-                    (do
-                      (a/<! ticker)
-                      (a/>! speaker "Finished"))))]
+                                          (recur schedule)))
+                                      (display "Finished")))))]
     (a/go (a/<! process) (a/close! ticker))
     {:control control
      :ticker ticker
-     :speaker speaker
      :process process}))
+
+(defn display
+  [speaker title]
+  (a/go (a/>! speaker (str title))))
+
+(defn do-workout
+  [workout]
+  (let [schedule (schedule/workout-schedule workout)
+        speaker (speaker/speaker-chan)
+        display (partial display speaker)]
+    (play-schedule display schedule)))
 
 (def standard-workout
   {:exercise {:names ["Jumping Jacks"
