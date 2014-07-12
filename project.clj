@@ -11,4 +11,5 @@
                  [org.mobicents.external.freetts/cmutimelex "1.0"]
                  [org.mobicents.external.freetts/cmu_time_awb "1.0"]
                  [org.mobicents.external.freetts/en_us "1.0"]
-                 [org.mobicents.external.freetts/cmu_us_kal "1.0"]])
+                 [org.mobicents.external.freetts/cmu_us_kal "1.0"]]
+  :repl-options {:init-ns interval-training})
