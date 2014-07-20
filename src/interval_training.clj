@@ -1,40 +1,51 @@
 (ns interval-training
   (:require [clojure.core.async :as a]
+            [interval-training.gui :as gui]
             [interval-training.schedule :as schedule]
             [interval-training.speaker :as speaker]
             [interval-training.ticker :as ticker]))
 
 (defn play-schedule
-  [display schedule]
+  [schedule speaker gui]
   (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
         work (a/go-loop [schedule schedule]
                (a/alt! control "Aborted"
                        ticker ([t]
+                                 (a/>! gui t)
                                  (if (seq schedule)
                                    (let [[tick title] (first schedule)]
                                      (if (= tick t)
                                        (do
-                                         (display title)
+                                         (a/>! speaker (str title))
+                                         (when (string? title)
+                                           (a/>! gui title))
                                          (recur (rest schedule)))
                                        (recur schedule)))
                                    "Finished"))))
-        process (a/go (display (a/<! work))
+        process (a/go (a/>! speaker (a/<! work))
+                      (a/>! gui 0)
+                      (a/>! gui "")
                       (a/close! ticker))]
     {:control control
      :ticker ticker
-     :process process}))
+     :process process
+     :schedule schedule}))
 
-(defn display
+(defn speak
   [speaker title]
   (a/put! speaker (str title)))
+
+(defn show
+  [gui message]
+  (a/put! gui message))
 
 (defn do-workout
   [workout]
   (let [schedule (schedule/workout-schedule workout)
         speaker (speaker/speaker-chan)
-        display (partial display speaker)]
-    (play-schedule display schedule)))
+        gui (gui/display-chan)]
+    (play-schedule schedule speaker gui)))
 
 (def standard-workout
   {:exercise {:names ["Jumping Jacks"
