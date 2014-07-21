@@ -10,9 +10,8 @@
   [period]
   (let [c (a/chan (a/sliding-buffer 1))
         scheduler (scheduler)
-        tick (atom 0)
         task #(a/go
-                (when-not (a/>! c (swap! tick inc))
+                (when-not (a/>! c :tick)
                   (.shutdown ^ScheduledExecutorService scheduler)))]
     (.scheduleAtFixedRate scheduler task 0 period TimeUnit/SECONDS)
     c))

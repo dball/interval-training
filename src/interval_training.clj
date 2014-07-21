@@ -9,20 +9,22 @@
   [schedule speaker gui]
   (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
-        work (a/go-loop [schedule schedule]
+        work (a/go-loop [schedule schedule
+                         t 1]
                (a/alt! control "Aborted"
-                       ticker ([t]
-                                 (a/>! gui t)
-                                 (if (seq schedule)
-                                   (let [[tick title] (first schedule)]
-                                     (if (= tick t)
-                                       (do
-                                         (a/>! speaker (str title))
-                                         (when (string? title)
-                                           (a/>! gui title))
-                                         (recur (rest schedule)))
-                                       (recur schedule)))
-                                   "Finished"))))
+                       ticker (do
+                                (a/>! gui t)
+                                (if (seq schedule)
+                                  (let [[tick title] (first schedule)
+                                        t' (inc t)]
+                                    (if (= tick t)
+                                      (do
+                                        (a/>! speaker (str title))
+                                        (when (string? title)
+                                          (a/>! gui title))
+                                        (recur (rest schedule) t'))
+                                      (recur schedule t')))
+                                  "Finished"))))
         process (a/go (a/>! speaker (a/<! work))
                       (a/>! gui 0)
                       (a/>! gui "")
