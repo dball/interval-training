@@ -10,22 +10,33 @@
   (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
         work (a/go-loop [schedule schedule
+                         tasks #{control ticker}
                          t 1]
-               (a/alt! control "Aborted"
-                       ticker (do
-                                (a/>! gui t)
-                                (if (seq schedule)
-                                  (let [[tick title] (first schedule)
-                                        t' (inc t)]
-                                    (if (= tick t)
-                                      (do
-                                        (a/>! speaker (str title))
-                                        (when (string? title)
-                                          (a/>! gui title))
-                                        (recur (rest schedule) t'))
-                                      (recur schedule t')))
-                                  "Finished"))))
-        process (a/go (a/>! speaker (a/<! work))
+               (let [[val task] (a/alts! (vec tasks))]
+                 (condp = task
+                   control
+                   (if val
+                     (let [running? (tasks ticker)
+                           tasks ((if running? disj conj) tasks ticker)]
+                       (a/>! speaker (if running? "Pause" "Continue"))
+                       (recur schedule tasks t))
+                     :aborted)
+
+                   ticker
+                   (do
+                     (a/>! gui t)
+                     (if (seq schedule)
+                       (let [[tick title] (first schedule)
+                             t' (inc t)]
+                         (if (= tick t)
+                           (do
+                             (a/>! speaker (str title))
+                             (when (string? title)
+                               (a/>! gui title))
+                             (recur (rest schedule) tasks t'))
+                           (recur schedule tasks t')))
+                       :finished)))))
+        process (a/go (a/>! speaker (name (a/<! work)))
                       (a/>! gui 0)
                       (a/>! gui "")
                       (a/close! ticker))]
