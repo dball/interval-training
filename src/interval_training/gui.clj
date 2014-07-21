@@ -37,7 +37,6 @@
                                     :size 80)
                         :halign :center)
         split (top-bottom-split stopwatch activity :divider-location 0.8 :preferred-size [800 :by 600])]
-    
     (config! f :content split)
     {:frame f
      :split split
@@ -58,14 +57,17 @@
   (dispose! (:frame ui))
   nil)
 
-(defn display-chan
+(defn display-channels
   []
   (let [ui (start!)
-        c (a/chan)
-        work (a/go-loop []
-               (when-let [message (a/<! c)]
-                 (display-message! ui message)
-                 (recur)))
-        process (a/go (a/<! work)
-                      (stop! ui))]
-    c))
+        display (a/chan)
+        events (a/chan (a/sliding-buffer 4))]
+    (a/go-loop []
+               (if-let [message (a/<! display)]
+                 (do
+                   (display-message! ui message)
+                   (recur))
+                 (stop! ui)))
+    (listen (:frame ui) :key-pressed (partial a/>!! events))
+    {:display display
+     :events events}))

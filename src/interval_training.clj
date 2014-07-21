@@ -6,11 +6,12 @@
             [interval-training.ticker :as ticker]))
 
 (defn play-schedule
-  [schedule speaker gui]
-  (let [control (a/chan)
+  [schedule ui]
+  (let [control (a/chan 4)
         ticker (ticker/ticker-chan 1)
+        {:keys [events speaker display]} ui
         work (a/go-loop [schedule schedule
-                         tasks #{control ticker}
+                         tasks #{control ticker events}
                          t 1]
                (let [[val task] (a/alts! (vec tasks))]
                  (condp = task
@@ -22,9 +23,14 @@
                        (recur schedule tasks t))
                      :aborted)
 
+                   events
+                   (do
+                     (a/>! control val)
+                     (recur schedule tasks t))
+
                    ticker
                    (do
-                     (a/>! gui t)
+                     (a/>! display t)
                      (if (seq schedule)
                        (let [[tick title] (first schedule)
                              t' (inc t)]
@@ -32,13 +38,13 @@
                            (do
                              (a/>! speaker (str title))
                              (when (string? title)
-                               (a/>! gui title))
+                               (a/>! display title))
                              (recur (rest schedule) tasks t'))
                            (recur schedule tasks t')))
                        :finished)))))
         process (a/go (a/>! speaker (name (a/<! work)))
-                      (a/>! gui 0)
-                      (a/>! gui "")
+                      (a/>! display 0)
+                      (a/>! display "")
                       (a/close! ticker))]
     {:control control
      :ticker ticker
@@ -56,9 +62,9 @@
 (defn do-workout
   [workout]
   (let [schedule (schedule/workout-schedule workout)
-        speaker (speaker/speaker-chan)
-        gui (gui/display-chan)]
-    (play-schedule schedule speaker gui)))
+        ui (assoc (gui/display-channels)
+             :speaker (speaker/speaker-chan))]
+    (play-schedule schedule ui)))
 
 (def standard-workout
   {:exercise {:names ["Jumping Jacks"
