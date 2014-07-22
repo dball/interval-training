@@ -7,49 +7,49 @@
 
 (defn play-schedule
   [schedule ui]
-  (let [control (a/chan 4)
+  (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
         {:keys [events speaker display]} ui
-        work (a/go-loop [schedule schedule
-                         tasks #{control ticker events}
-                         t 1]
-               (let [[val task] (a/alts! (vec tasks))]
+        tasks [control ticker]
+        work (a/go-loop [state {:schedule schedule
+                                :running? true
+                                :t 1}]
+               (let [{:keys [schedule running? t]} state
+                     [val task] (a/alts! (vec tasks))]
                  (condp = task
                    control
                    (if val
-                     (let [running? (tasks ticker)
-                           tasks ((if running? disj conj) tasks ticker)]
+                     (do
                        (a/>! speaker (if running? "Pause" "Continue"))
-                       (recur schedule tasks t))
+                       (when (not running?) (a/<! ticker))
+                       (recur (assoc state :running? (not running?))))
                      :aborted)
 
-                   events
-                   (do
-                     (a/>! control val)
-                     (recur schedule tasks t))
-
                    ticker
-                   (do
-                     (a/>! display t)
-                     (if (seq schedule)
-                       (let [[tick title] (first schedule)
-                             t' (inc t)]
-                         (if (= tick t)
-                           (do
-                             (a/>! speaker (str title))
-                             (when (string? title)
-                               (a/>! display title))
-                             (recur (rest schedule) tasks t'))
-                           (recur schedule tasks t')))
-                       :finished)))))
-        process (a/go (a/>! speaker (name (a/<! work)))
-                      (a/>! display 0)
-                      (a/>! display "")
-                      (a/close! ticker))]
-    {:control control
-     :ticker ticker
-     :process process
-     :schedule schedule}))
+                   (if running?
+                     (do
+                       (a/>! display t)
+                       (if (seq schedule)
+                         (let [[tick title] (first schedule)
+                               t' (inc t)]
+                           (if (= tick t)
+                             (do
+                               (a/>! speaker (str title))
+                               (when (string? title)
+                                 (a/>! display title))
+                               (recur (assoc state :schedule (rest schedule) :t t')))
+                             (recur (assoc state :t t'))))
+                         :finished))
+                     (recur state)))))]
+    (a/go-loop []
+      (when-let [val (a/<! events)]
+        (a/>! control val)
+        (recur)))
+    (a/go (a/>! speaker (name (a/<! work)))
+          (a/>! display 0)
+          (a/>! display "")
+          (a/close! ticker))
+    {:control control}))
 
 (defn speak
   [speaker title]
@@ -81,8 +81,8 @@
                       "Left side plank"
                       "Right side plank"
                       "Bird Dogs"]
-              :active [30 5]
-              :respite [10 3]}
+              :active [10 5]
+              :respite [5 3]}
    :sets {:count 2
           :respite [120 10]}})
 
