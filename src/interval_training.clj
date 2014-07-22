@@ -5,66 +5,67 @@
             [interval-training.speaker :as speaker]
             [interval-training.ticker :as ticker]))
 
-(defn play-schedule
-  [schedule ui]
+(defn next-activities
+  [[activity & activities]]
+  (let [{:keys [duration countdown]} activity]
+    (if (> duration 1)
+      (cons (-> activity
+                (update-in [:duration] dec)
+                (assoc :ongoing? true)
+                (cond-> (= (dec duration) countdown)
+                        (assoc :counting-down? true)))
+            activities)
+      activities)))
+
+(defn play-activities
+  [activities ui]
   (let [control (a/chan)
         ticker (ticker/ticker-chan 1)
         {:keys [events speaker display]} ui
-        tasks [control ticker]
-        work (a/go-loop [state {:schedule schedule
-                                :running? true
-                                :t 1}]
-               (let [{:keys [schedule running? t]} state
-                     [val task] (a/alts! (vec tasks))]
+        work (a/go-loop [state {:activities activities
+                                :active? true}]
+               (let [{:keys [activities active?]} state
+                     [val task] (a/alts! [control ticker])]
                  (condp = task
                    control
                    (if val
-                     (do
-                       (a/>! speaker (if running? "Pause" "Continue"))
-                       (when (not running?) (a/<! ticker))
-                       (recur (assoc state :running? (not running?))))
+                     (let [action (if active? :pause :continue)]
+                       (a/>! speaker (name action))
+                       (recur (update-in state [:active?] not)))
                      :aborted)
 
                    ticker
-                   (if running?
-                     (do
-                       (a/>! display t)
-                       (if (seq schedule)
-                         (let [[tick title] (first schedule)
-                               t' (inc t)]
-                           (if (= tick t)
-                             (do
-                               (a/>! speaker (str title))
-                               (when (string? title)
-                                 (a/>! display title))
-                               (recur (assoc state :schedule (rest schedule) :t t')))
-                             (recur (assoc state :t t'))))
-                         :finished))
-                     (recur state)))))]
+                   (if active?
+                     (when-let [{:keys [title
+                                        duration
+                                        counting-down?
+                                        ongoing?]} (first activities)]
+                       (when-not ongoing?
+                         (a/>! display title)
+                         (a/>! speaker title))
+                       (a/>! display duration)
+                       (when counting-down?
+                         (a/>! speaker (str duration)))
+                       (recur (update-in state [:activities]
+                                         next-activities)))
+                     (recur state)))))
+        process (a/go (a/>! speaker (name (a/<! work)))
+                      (a/>! display 0)
+                      (a/>! display "")
+                      (a/close! ticker))]
     (a/go-loop []
       (when-let [val (a/<! events)]
         (a/>! control val)
         (recur)))
-    (a/go (a/>! speaker (name (a/<! work)))
-          (a/>! display 0)
-          (a/>! display "")
-          (a/close! ticker))
-    {:control control}))
-
-(defn speak
-  [speaker title]
-  (a/put! speaker (str title)))
-
-(defn show
-  [gui message]
-  (a/put! gui message))
+    {:control control
+     :process process}))
 
 (defn do-workout
   [workout]
-  (let [schedule (schedule/workout-schedule workout)
+  (let [activities (schedule/workout-activities workout)
         ui (assoc (gui/display-channels)
              :speaker (speaker/speaker-chan))]
-    (play-schedule schedule ui)))
+    (play-activities activities ui)))
 
 (def standard-workout
   {:exercise {:names ["Jumping Jacks"
@@ -81,8 +82,8 @@
                       "Left side plank"
                       "Right side plank"
                       "Bird Dogs"]
-              :active [10 5]
-              :respite [5 3]}
+              :active [30 5]
+              :respite [9 3]}
    :sets {:count 2
           :respite [120 10]}})
 
